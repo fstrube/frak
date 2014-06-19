@@ -49,8 +49,11 @@ def main
 
   # Load special production config
   if $options[:env]
-    $options.merge! config[$options[:env].to_sym]
+    $options.merge! config[$options[:env]]
   end
+
+  # Convert all keys in options to symbols
+  $options = Hash[$options.map { |k, v| [k.to_sym, v] }]
 
   execute
 end
@@ -157,7 +160,7 @@ end
 # Generate a filter for rsync
 
 def rsync_filter
-  filter = [".git*", ".svn*", ".tags*", "Capfile", "Gemfile*", "Vagrantfile*"]
+  filter = [".frak*", ".git*", ".svn*", ".tags*", "Capfile", "Gemfile*", "Vagrantfile*"]
 
   # include filters via commandline
   if $options[:ignore]
@@ -182,21 +185,22 @@ def rsync_command(options = nil)
 
   # Flip the source and destination if this is a pull command
   if $command == "pull"
-    source = "#{$options[:server]}:#{$options[:remote_path]}"
+    # trailing slashes are important for pull
+    source = "#{$options[:server]}:#{$options[:remote_path]}/"
     destination = "#{File.dirname frakfile}/"
   else
     source = "#{File.dirname frakfile}/"
     destination = "#{$options[:server]}:#{$options[:remote_path]}"
   end
 
-  rsync = "#{rsync} rsync " +
+  rsync = "#{rsync}rsync " +
     "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
-    "--compress --checksum --itemize-changes --recursive " +
+    "--compress --checksum --itemize-changes --recursive --delete " +
     "#{rsync_filter} " +
     # "--backup --backup-dir '' " +
     "#{options} " +
     (rsync_files.join.length > 0 ? "--files-from=- --relative " : "") +
-    "#{source} #{destination}"
+    "'#{source}' #{destination}"
 end
 
 ##
@@ -205,7 +209,7 @@ end
 def execute
   case $command
     when "init"
-      system "touch .frak && $EDITOR .frak"
+      system "touch .frak .frakignore && $EDITOR .frak"
 
     when "console"
       system "ssh #{$options[:server]} #{$options[:command]}"
@@ -214,6 +218,10 @@ def execute
       # generate a dry-run command
       command = rsync_command "--dry-run"
 
+      if $options[:debug]
+        say "#{HighLine::BLUE}#{command}#{HighLine::CLEAR}"
+      end
+
       # run it from the root directory where .frak file is found
       Dir.chdir File.dirname frakfile do
         system command
@@ -221,20 +229,24 @@ def execute
 
       begin
         # prompt for continuance
-        proceed = agree("The above actions will be taken. Continue? (This cannot be undone): ") { |q| q.default = "no" }
+        proceed = agree("#{HighLine::YELLOW}The above actions will be taken. Continue? (This cannot be undone): #{HighLine::CLEAR}")
         if proceed
           command = rsync_command
           # run in the directory that .frak file is found
           Dir.chdir File.dirname frakfile do
             system command
+            if $options[:after]
+              say "#{HighLine::YELLOW}Executing commands on remote server.#{HighLine::CLEAR}"
+              system "ssh #{$options[:server]} '#{$options[:after]}'"
+            end
           end
-          say "Deployment complete"
+          say "#{HighLine::GREEN}Deployment complete.#{HighLine::CLEAR}"
         else
-          say "Deployment cancelled by user."
+          say "#{HighLine::RED}Deployment cancelled by user.#{HighLine::CLEAR}"
         end
       # rescue handles ctrl+c
       rescue Interrupt
-        say "\nDeployment cancelled by user."
+        say "\n#{HighLine::RED}Deployment cancelled by user.#{HighLine::CLEAR}"
       end
 
     when "diff"
@@ -245,7 +257,7 @@ def execute
       end
       num_changes = changes.lines.count
 
-      proceed = num_changes > 10 ? agree("#{changes.lines.count} file(s) will be compared. Continue?") : true
+      proceed = num_changes > 10 ? agree("#{HighLine::YELLOW}#{changes.lines.count} file(s) will be compared. Continue?#{HighLine::CLEAR}") : true
 
       if proceed
         Dir.chdir File.dirname frakfile do
