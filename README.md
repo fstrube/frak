@@ -38,6 +38,8 @@ By default, simply running `frak` will attempt to deploy your application. A dry
        diff          Show differences between local and remote files
        pull          Download the remote file(s)
        push          Deploy website via the method specified in the config
+       --help        Display this help message
+       --version     Display the current version of frak
 
      Options
        env           load the specified environment into the config
