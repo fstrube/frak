@@ -1,0 +1,277 @@
+#!/usr/bin/env ruby
+#
+# @version 1.0
+# @author Franklin P. Strube <franklin.strube@gmail.com>
+# @copyright 2014 Franklin P. Strube
+#
+#: Usage: frak <command> [option=value option=value ...]
+#:
+#: Commands
+#:   init          Initialize the current directory for frak deployment
+#:   console       Connect to the remote server via SSH
+#:   diff          Show differences between local and remote files
+#:   pull          Download the remote file(s)
+#:   push          Deploy website via the method specified in the config
+#:
+#: Options
+#:   method        currently only supports rsync
+#:   command       execute a command on the remote server
+#:   path          defaults to current directory
+#:   remote_path   override what is read from .frak file
+#:   ignore        ignore certain files or folders when deploying
+#:
+#: Examples
+#:
+#:   Execute a command on your deployment server:
+#:     frak console command="vi index.html"
+#:
+#:   Compare specific files before deploying:
+#:     frak diff path="*.html"
+#:
+#:   Deploy files but exclude certain paths:
+#:     frak ignore="logs uploads"
+
+require 'yaml'
+require 'highline/import'
+
+##
+# The main routine of the program. Typical execution is:
+#   1. Parse arguments
+#   2. Load configuration
+#   3. Execute proper command
+
+def main
+  # Process the commandline arguments
+  $command, $options = parse_command
+
+  # Load the config, but commandline options take precedence.
+  $options.merge!(config) { |k,a,b| a }
+
+  # Load special production config
+  if $options[:env]
+    $options.merge! config[$options[:env].to_sym]
+  end
+
+  execute
+end
+
+##
+# Outputs the usage / help information for this executable.
+
+def usage
+  File.open __FILE__ do |f|
+    f.each_line.grep(/^#:/) do |l|
+      say l[2..-1]
+    end
+  end
+end
+
+##
+# Outputs the version information for the frak tool.
+
+def version
+  File.open __FILE__ do |f|
+    f.each_line.grep(/^# @version/) do |l|
+      say l[11..-1]
+    end
+  end
+end
+
+##
+# Parse command and options
+
+def parse_command
+  arguments = ARGV.clone
+  options = {}
+  command = "push"
+  while arguments.length > 0
+    if arguments[0] =~ /=/ then
+      key, value = arguments[0].split '='
+      options[key.to_sym] = value
+    else
+      command = arguments[0]
+    end
+    arguments.shift
+  end
+
+  return [command, options]
+end
+
+##
+# Read YAML from .frak configuration file
+
+def config
+  if File.exists? frakfile
+    YAML.load_file(frakfile)
+  else
+    {}
+  end
+end
+
+##
+# Find a .frak configuration file in the directories
+# above.
+
+def frakfile
+  frakfile = ".frak"
+  while not File.exists? frakfile
+    break if File.expand_path(frakfile) == '/.frak'
+    frakfile = "../#{frakfile}"
+  end
+
+  return File.expand_path frakfile
+end
+
+##
+# Which diff command or utility to use
+def diff_command
+  if $options[:diff]
+    return $options[:diff]
+  else
+    return "diff -Naur"
+  end
+end
+
+##
+# Determine what is the local_path to be deployed
+
+def rsync_files
+  # if path= is defined
+  if $options[:path]
+    paths = $options[:path].split.map { |p| File.expand_path p }
+  else
+    paths = [Dir.pwd]
+  end
+
+  # expand any wildcards
+  paths.map! { |p| Dir.glob(p) }
+  paths.flatten!
+
+  # make paths relative to .frak file
+  paths.map! { |p| p.sub File.dirname(frakfile), "" }
+
+  return paths
+end
+
+##
+# Generate a filter for rsync
+
+def rsync_filter
+  filter = [".git*", ".svn*", ".tags*", "Capfile", "Gemfile*", "Vagrantfile*"]
+
+  # include filters via commandline
+  if $options[:ignore]
+    filter = filter + $options[:ignore].split
+  end
+
+  filter.map! { |e| "--filter='- #{e}'" }
+
+  filter.push "--filter='.e .frakignore'"
+
+  filter.join ' '
+end
+
+##
+# Generate the entire rsync command. Uses rsync's --files-from
+# parameter to deploy multiple paths at once.
+
+def rsync_command(options = nil)
+  if rsync_files.join.length > 0
+    rsync = "echo \"#{rsync_files.join("\n")}\" | "
+  end
+
+  # Flip the source and destination if this is a pull command
+  if $command == "pull"
+    source = "#{$options[:server]}:#{$options[:remote_path]}"
+    destination = "#{File.dirname frakfile}/"
+  else
+    source = "#{File.dirname frakfile}/"
+    destination = "#{$options[:server]}:#{$options[:remote_path]}"
+  end
+
+  rsync = "#{rsync} rsync " +
+    "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
+    "--compress --checksum --itemize-changes --recursive " +
+    "#{rsync_filter} " +
+    # "--backup --backup-dir '' " +
+    "#{options} " +
+    (rsync_files.join.length > 0 ? "--files-from=- --relative " : "") +
+    "#{source} #{destination}"
+end
+
+##
+# Execute the appropriate command
+
+def execute
+  case $command
+    when "init"
+      system "touch .frak && $EDITOR .frak"
+
+    when "console"
+      system "ssh #{$options[:server]} #{$options[:command]}"
+
+    when "push", "pull"
+      # generate a dry-run command
+      command = rsync_command "--dry-run"
+
+      # run it from the root directory where .frak file is found
+      Dir.chdir File.dirname frakfile do
+        system command
+      end
+
+      begin
+        # prompt for continuance
+        proceed = agree("The above actions will be taken. Continue? (This cannot be undone): ") { |q| q.default = "no" }
+        if proceed
+          command = rsync_command
+          # run in the directory that .frak file is found
+          Dir.chdir File.dirname frakfile do
+            system command
+          end
+          say "Deployment complete"
+        else
+          say "Deployment cancelled by user."
+        end
+      # rescue handles ctrl+c
+      rescue Interrupt
+        say "\nDeployment cancelled by user."
+      end
+
+    when "diff"
+      # show differences between server and local
+      changes = ""
+      Dir.chdir File.dirname frakfile do
+        changes = `#{rsync_command "--dry-run"}`
+      end
+      num_changes = changes.lines.count
+
+      proceed = num_changes > 10 ? agree("#{changes.lines.count} file(s) will be compared. Continue?") : true
+
+      if proceed
+        Dir.chdir File.dirname frakfile do
+          changes.each_line do |line|
+            action, file = line.chomp.split(' ', 2)
+
+            # apply labels to our diff so we know what we're looking at
+            remote_label = "#{$options[:server]}/#{file}"
+            local_label  = "local/#{file}"
+            system %Q:bash -c '#{diff_command} --label #{remote_label} --label #{local_label} <(ssh #{$options[:server]} "cat #{$options[:remote_path]}/#{file} 2>/dev/null") "#{file}"':
+          end
+        end
+      end
+
+    when "--help"
+      usage
+
+    when "--version"
+      version
+
+    else
+      usage
+
+  end
+end
+
+if __FILE__ == $0
+  main
+end
