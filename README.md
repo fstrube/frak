@@ -6,8 +6,14 @@ Frak is a deployment tool that uses `rsync` to upload file changes to remote ser
 
 Simply copy the `bin/frak` file to a location in your `$PATH`. Or, you can symlink it as well.
 
-    $ git clone git@github.com:fstrube/frak.git
+    $ git clone https://github.com/fstrube/frak.git
     $ ln -s `pwd`/frak/bin/frak ~/bin/frak
+
+# Dependencies
+
+The `frak` script relies on the Highline gem for prompting and ANSI-colored output. Simply run `gem install highline` and you should be good to go.
+
+Also, you will need rsync installed on your machine. This should already be installed in most cases. However, if it is not installed you can find it in your Homebrew or apt repositories.
 
 # Configuration
 
@@ -25,6 +31,25 @@ All configuration options are stored in a dotfile in the root of your project. T
       server: www.example.com
 
 You can see in the example above that there are three environments. The first four lines constitute the "default" environment. Then, you have a "stage" environment and a "production" environment where the server option varies. You can specify which environment to use when you run frak by doing `frak env=production`.
+
+## Ignoring Files
+
+When deploying your app, often times you will want to exclude certain files and directories from being pushed to the server. By default, frak will ignore the following files:
+
+    - .frak*
+    - .git*
+    - .svn*
+    - .tags*
+    - Capfile
+    - Gemfile*
+    - Vagrantfile*
+
+You can tell frak to ignore additional files by configuring a `.frakignore` file. The syntax of this file follows rsync's filter rules. Refer to the **Filter Rules** section in the [rsync man pages](http://rsync.samba.org/ftp/rsync/rsync.html). The most common filter is the exclude pattern, as seen below:
+
+    # Sample .frakignore file
+    - var/log
+    - *.bak
+    - *.DS_Store
 
 # Usage
 
