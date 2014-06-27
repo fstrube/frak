@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.0
+# @version 1.0.1
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -35,7 +35,12 @@
 #:     frak ignore="logs uploads"
 
 require 'yaml'
-require 'highline/import'
+begin
+  require 'highline/import'
+rescue LoadError
+  puts "\033[31mFrak! You're missing the Highline gem. Run \033[33mgem install highline\033[31m to get it.\033[0m"
+  exit
+end
 
 ##
 # The main routine of the program. Typical execution is:
@@ -44,21 +49,26 @@ require 'highline/import'
 #   3. Execute proper command
 
 def main
-  # Process the commandline arguments
-  $command, $options = parse_command
+  begin
+    # Process the commandline arguments
+    $command, $options = parse_command
 
-  # Load the config, but commandline options take precedence.
-  $options.merge!(config) { |k,a,b| a }
+    # Load the config, but commandline options take precedence.
+    $options.merge!(config) { |k,a,b| a }
 
-  # Load special production config
-  if $options[:env]
-    $options.merge! config[$options[:env]]
+    # Load special production config
+    if $options[:env]
+      $options.merge! config[$options[:env]]
+    end
+
+    # Convert all keys in options to symbols
+    $options = Hash[$options.map { |k, v| [k.to_sym, v] }]
+
+    execute
+  rescue Exception => e
+    say "#{HighLine::RED}#{e.message}#{HighLine::CLEAR}"
+    puts e.backtrace if $options[:debug]
   end
-
-  # Convert all keys in options to symbols
-  $options = Hash[$options.map { |k, v| [k.to_sym, v] }]
-
-  execute
 end
 
 ##
@@ -125,6 +135,10 @@ def frakfile
     frakfile = "../#{frakfile}"
   end
 
+  if not File.exists? frakfile
+    raise "Frak! No configuration file found! Please run 'frak init' in your project folder."
+  end
+
   return File.expand_path frakfile
 end
 
@@ -172,7 +186,9 @@ def rsync_filter
 
   filter.map! { |e| "--filter='- #{e}'" }
 
-  filter.push "--filter='.e .frakignore'"
+  if File.exists? "#{File.dirname frakfile}/.frakignore" then
+    filter.push "--filter='.e .frakignore'"
+  end
 
   filter.join ' '
 end
