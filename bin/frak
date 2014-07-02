@@ -53,12 +53,14 @@ def main
     # Process the commandline arguments
     $command, $options = parse_command
 
-    # Load the config, but commandline options take precedence.
-    $options.merge!(config) { |k,a,b| a }
+    if not $command == "init"
+      # Load the config, but commandline options take precedence.
+      $options.merge!(config) { |k,a,b| a }
 
-    # Load special production config
-    if $options[:env]
-      $options.merge! config[$options[:env]]
+      # Load special production config
+      if $options[:env]
+        $options.merge! config[$options[:env]]
+      end
     end
 
     # Convert all keys in options to symbols
