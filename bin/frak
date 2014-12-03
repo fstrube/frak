@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.0.2
+# @version 1.0.3
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -217,6 +217,7 @@ def rsync_command(options = nil)
   rsync = "#{rsync}rsync " +
     "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
     "--compress --checksum --itemize-changes --recursive --delete " +
+    ($options[:rsync_path].nil? ? "" : "--rsync-path=\"#{$options[:rsync_path]}\" ") +
     "#{rsync_filter} " +
     # "--backup --backup-dir '' " +
     "#{options} " +

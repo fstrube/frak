@@ -23,6 +23,7 @@ All configuration options are stored in a dotfile in the root of your project. T
     remote_path: /var/www/com.example
     after: cd /var/www/com.example; rm cache/*
     method: rsync
+    rsync_path: sudo rsync
 
     stage:
       server: dev.example.com
@@ -72,6 +73,7 @@ By default, simply running `frak` will attempt to deploy your application. A dry
        command       execute a command on the remote server
        path          defaults to current directory
        remote_path   override what is read from .frak file
+       rsync_path    override the rsync-path read from .frak file (if present)
        ignore        ignore certain files or folders when deploying
 
      Examples
