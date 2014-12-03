@@ -35,6 +35,7 @@
 #:     frak ignore="logs uploads"
 
 require 'yaml'
+require 'digest'
 begin
   require 'highline/import'
 rescue LoadError
@@ -100,7 +101,7 @@ end
 
 def parse_command
   arguments = ARGV.clone
-  options = {}
+  options = {backup_path: ".backups"}
   command = "push"
   while arguments.length > 0
     if arguments[0] =~ /=/ then
@@ -214,12 +215,23 @@ def rsync_command(options = nil)
     destination = "#{$options[:server]}:#{$options[:remote_path]}"
   end
 
+  # Figure out backup options
+  if !$options[:backup_path].nil? && $options[:backup_path]
+    backup = ["--exclude \"#{$options[:backup_path]}\""]
+    if not $command == "pull"
+      # keep the same backup path for all rsync_commands
+      $backup_path = "#{$options[:backup_path]}/#{Time.new.strftime("%Y%m%d%H%M%S")}" if $backup_path.nil?
+      backup.push "--backup --backup-dir \"#{$backup_path}\""
+    end
+    backup = "#{backup.join ' '} "
+  end
+
   rsync = "#{rsync}rsync " +
     "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
     "--compress --checksum --itemize-changes --recursive --delete " +
     ($options[:rsync_path].nil? ? "" : "--rsync-path=\"#{$options[:rsync_path]}\" ") +
     "#{rsync_filter} " +
-    # "--backup --backup-dir '' " +
+    backup +
     "#{options} " +
     (rsync_files.join.length > 0 ? "--files-from=- --relative " : "") +
     "'#{source}' #{destination}"
