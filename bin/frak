@@ -66,9 +66,9 @@ def main
       # Load the config, but commandline options take precedence.
       $options.merge!(config) { |k,a,b| a }
 
-      # Load special production config
+      # Load special production config, but commandline options take precedence.
       if $options[:env]
-        $options.merge! config[$options[:env]]
+        $options.merge!(config[$options[:env]]) { |k,a,b| a }
       end
     end
 
@@ -129,7 +129,7 @@ end
 
 def config
   if File.exists? frakfile
-    YAML.load_file(frakfile)
+    Hash[YAML.load_file(frakfile).map { |k, v| [k.to_sym, v] }]
   else
     {}
   end
