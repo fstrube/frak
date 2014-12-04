@@ -33,6 +33,12 @@ All configuration options are stored in a dotfile in the root of your project. T
 
 You can see in the example above that there are three environments. The first four lines constitute the "default" environment. Then, you have a "stage" environment and a "production" environment where the server option varies. You can specify which environment to use when you run frak by doing `frak env=production`.
 
+## Backups
+
+By default, frak will backup your file changes to a `.backups` folder on the remote server in the path specified by the `remote_path` configuration parameter. Backups contain full copies of any modified or deleted files, as well as a patch file containing line-by-line changes. Currently, restoring from backup is still a manual process.
+
+Backups will remain available for 30 days by default, but you can set the retention policy with the `backup_retention` parameter in the configuration.
+
 ## Ignoring Files
 
 When deploying your app, often times you will want to exclude certain files and directories from being pushed to the server. By default, frak will ignore the following files:

@@ -12,6 +12,8 @@
 #:   diff          Show differences between local and remote files
 #:   pull          Download the remote file(s)
 #:   push          Deploy website via the method specified in the config
+#:   backups:list  List any backups found on the server
+#:   backups:purge Purge all backups
 #:   --help        Display this help message
 #:   --version     Display the current version of frak
 #:
@@ -198,6 +200,72 @@ def rsync_filter
 end
 
 ##
+# List any backups found on the server
+
+def backups_list
+  system %Q:ssh #{$options[:server]} 'ls #{$options[:remote_path]}/#{$options[:backup_path]}':
+end
+
+##
+# Purge any outdated backups
+
+def backups_purge
+  begin
+    date = parse_date "#{$options[:backup_retention]} ago"
+  rescue
+    raise "Invalid retention date! #{$options[:backup_retention]}"
+  end
+  say "#{HighLine::YELLOW}Purging old backups before #{date.strftime "%c"}.#{HighLine::CLEAR}"
+
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
+end
+
+##
+# Create a patch of the latest backup
+
+def backups_patch
+  return unless $backup_path
+
+  hash = Digest::SHA2.new.update(Time.new.strftime("%Y%m%d%H%M%S")).to_s
+  patch_command = "" +
+    "find . -type f | " +
+    "grep -v #{hash}.patch | " +
+    "cut -c3- | " +
+    "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
+  say "#{HighLine::YELLOW}Generating patch file #{hash}.patch.#{HighLine::CLEAR}"
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} > #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch':
+end
+
+##
+# Parse a date from a string of the format "x <days|weeks|months|years> [ago]"
+
+def parse_date(string)
+  parts = string.split
+
+  if parts[1][0..5] == "second"
+    seconds = parts[0].to_f
+  elsif parts[1][0..5] == "minute"
+    seconds = parts[0].to_f * 60
+  elsif parts[1][0..3] == "hour"
+    seconds = parts[0].to_f * 60 * 60
+  elsif parts[1][0..2] == "day"
+    seconds = parts[0].to_f * 60 * 60 * 24
+  elsif parts[1][0..3] == "week"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 7
+  elsif parts[1][0..4] == "month"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 30
+  elsif parts[1][0..3] == "year"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 365
+  end
+
+  if parts[2] == "ago"
+    return Time.now - seconds
+  else
+    return Time.now + seconds
+  end
+end
+
+##
 # Generate the entire rsync command. Uses rsync's --files-from
 # parameter to deploy multiple paths at once.
 
@@ -246,6 +314,12 @@ def execute
     when "init"
       system "touch .frak .frakignore && $EDITOR .frak"
 
+    when "backups:list"
+      backups_list
+
+    when "backups:purge"
+      backups_purge
+
     when "console"
       system "ssh #{$options[:server]} #{$options[:command]}"
 
@@ -270,19 +344,8 @@ def execute
           # run in the directory that .frak file is found
           Dir.chdir File.dirname frakfile do
             system command
-            if $backup_path
-              hash = Digest::SHA2.new.update(Time.new.strftime("%Y%m%d%H%M%S")).to_s
-              patch_command = "" +
-                "find . -type f | " +
-                "grep -v #{hash}.patch | " +
-                "cut -c3- | " +
-                "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
-              say "#{HighLine::YELLOW}Generating patch file #{hash}.patch.#{HighLine::CLEAR}"
-              system "ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} > #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch'"
-
-              say "#{HighLine::YELLOW}Purging old backups.#{HighLine::CLEAR}"
-              system "ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt `date --date=\"#{$options[:backup_retention]} ago\" +%Y%m%d%H%M%S` ] && rm -rf #{$options[:backup_path]}/$x; done'"
-            end
+            backups_patch
+            backups_purge
             if $options[:after]
               say "#{HighLine::YELLOW}Executing commands on remote server.#{HighLine::CLEAR}"
               system "ssh #{$options[:server]} '#{$options[:after]}'"
