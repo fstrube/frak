@@ -36,6 +36,7 @@
 
 require 'yaml'
 require 'digest'
+require 'time'
 begin
   require 'highline/import'
 rescue LoadError
@@ -101,7 +102,7 @@ end
 
 def parse_command
   arguments = ARGV.clone
-  options = {backup_path: ".backups"}
+  options = {backup_path: ".backups", backup_retention: "30 days"}
   command = "push"
   while arguments.length > 0
     if arguments[0] =~ /=/ then
@@ -269,6 +270,19 @@ def execute
           # run in the directory that .frak file is found
           Dir.chdir File.dirname frakfile do
             system command
+            if $backup_path
+              hash = Digest::SHA2.new.update(Time.new.strftime("%Y%m%d%H%M%S")).to_s
+              patch_command = "" +
+                "find . -type f | " +
+                "grep -v #{hash}.patch | " +
+                "cut -c3- | " +
+                "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
+              say "#{HighLine::YELLOW}Generating patch file #{hash}.patch.#{HighLine::CLEAR}"
+              system "ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} > #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch'"
+
+              say "#{HighLine::YELLOW}Purging old backups.#{HighLine::CLEAR}"
+              system "ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt `date --date=\"#{$options[:backup_retention]} ago\" +%Y%m%d%H%M%S` ] && rm -rf #{$options[:backup_path]}/$x; done'"
+            end
             if $options[:after]
               say "#{HighLine::YELLOW}Executing commands on remote server.#{HighLine::CLEAR}"
               system "ssh #{$options[:server]} '#{$options[:after]}'"
