@@ -70,8 +70,10 @@ By default, simply running `frak` will attempt to deploy your application. A dry
        diff          Show differences between local and remote files
        pull          Download the remote file(s)
        push          Deploy website via the method specified in the config
+       backups:list  List any backups found on the server
+       backups:purge Purge all backups
        --help        Display this help message
-       --version     Display the current version of frak
+       --version     Display the current version of frak, also checks for upgrades
 
      Options
        env           load the specified environment into the config
@@ -92,3 +94,7 @@ By default, simply running `frak` will attempt to deploy your application. A dry
 
        Deploy files but exclude certain paths:
          frak ignore="logs uploads"
+
+## Updating
+
+As of version 1.1.0, frak keeps itself up-to-date with the latest code on Github. Any time a new version is available, you will be prompted to update the frak executable.

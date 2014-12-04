@@ -23,6 +23,7 @@
 #:   command       execute a command on the remote server
 #:   path          defaults to current directory
 #:   remote_path   override what is read from .frak file
+#:   rsync_path    override the rsync-path read from .frak file (if present)
 #:   ignore        ignore certain files or folders when deploying
 #:
 #: Examples
