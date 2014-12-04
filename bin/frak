@@ -15,7 +15,7 @@
 #:   backups:list  List any backups found on the server
 #:   backups:purge Purge all backups
 #:   --help        Display this help message
-#:   --version     Display the current version of frak
+#:   --version     Display the current version of frak, also checks for upgrades
 #:
 #: Options
 #:   env           load the specified environment into the config
@@ -39,6 +39,7 @@
 require 'yaml'
 require 'digest'
 require 'time'
+require 'shellwords'
 begin
   require 'highline/import'
 rescue LoadError
@@ -53,9 +54,13 @@ end
 #   3. Execute proper command
 
 def main
+  # Process the commandline arguments
+  $command, $options = parse_command
+
+  # Check for updates
+  auto_update
+
   begin
-    # Process the commandline arguments
-    $command, $options = parse_command
 
     if not $command == "init"
       # Load the config, but commandline options take precedence.
@@ -94,7 +99,7 @@ end
 def version
   File.open __FILE__ do |f|
     f.each_line.grep(/^# @version/) do |l|
-      say l[11..-1]
+      return l[11..-2]
     end
   end
 end
@@ -387,11 +392,34 @@ def execute
       usage
 
     when "--version"
-      version
+      say version
 
     else
       usage
 
+  end
+end
+
+def auto_update
+  require 'open-uri'
+  open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
+    r.each_line do |line|
+      if line[0..9] == "# @version"
+        new_version = line[11..-2].to_s
+        if new_version != version
+          upgrade = agree("#{HighLine::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade?#{HighLine::CLEAR}")
+          if upgrade
+            File.open(__FILE__, 'w') do |file|
+              r.pos = 0
+              file.write(r.read)
+            end
+            say "Upgraded to version #{new_version}."
+            system Shellwords.join([$0] + ARGV) unless $command == "--version"
+            exit
+          end
+        end
+      end
+    end
   end
 end
 
