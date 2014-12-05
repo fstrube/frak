@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.1.1
+# @version 1.1.2
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -69,6 +69,9 @@ def main
 
       # Load special production config, but commandline options take precedence.
       if $options[:env]
+        if config[$options[:env].to_sym].nil?
+          raise %Q:Missing configuration for environment "#{$options[:env]}"!:
+        end
         $options.merge!(config[$options[:env].to_sym]) { |k,a,b| a }
       end
     end
