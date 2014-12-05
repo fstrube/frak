@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.0.3
+# @version 1.1.0
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -12,8 +12,10 @@
 #:   diff          Show differences between local and remote files
 #:   pull          Download the remote file(s)
 #:   push          Deploy website via the method specified in the config
+#:   backups:list  List any backups found on the server
+#:   backups:purge Purge all backups
 #:   --help        Display this help message
-#:   --version     Display the current version of frak
+#:   --version     Display the current version of frak, also checks for upgrades
 #:
 #: Options
 #:   env           load the specified environment into the config
@@ -21,6 +23,7 @@
 #:   command       execute a command on the remote server
 #:   path          defaults to current directory
 #:   remote_path   override what is read from .frak file
+#:   rsync_path    override the rsync-path read from .frak file (if present)
 #:   ignore        ignore certain files or folders when deploying
 #:
 #: Examples
@@ -35,6 +38,9 @@
 #:     frak ignore="logs uploads"
 
 require 'yaml'
+require 'digest'
+require 'time'
+require 'shellwords'
 begin
   require 'highline/import'
 rescue LoadError
@@ -49,17 +55,21 @@ end
 #   3. Execute proper command
 
 def main
+  # Process the commandline arguments
+  $command, $options = parse_command
+
+  # Check for updates
+  auto_update
+
   begin
-    # Process the commandline arguments
-    $command, $options = parse_command
 
     if not $command == "init"
       # Load the config, but commandline options take precedence.
       $options.merge!(config) { |k,a,b| a }
 
-      # Load special production config
+      # Load special production config, but commandline options take precedence.
       if $options[:env]
-        $options.merge! config[$options[:env]]
+        $options.merge!(config[$options[:env]]) { |k,a,b| a }
       end
     end
 
@@ -90,7 +100,7 @@ end
 def version
   File.open __FILE__ do |f|
     f.each_line.grep(/^# @version/) do |l|
-      say l[11..-1]
+      return l[11..-2]
     end
   end
 end
@@ -100,7 +110,7 @@ end
 
 def parse_command
   arguments = ARGV.clone
-  options = {}
+  options = {backup_path: ".backups", backup_retention: "30 days"}
   command = "push"
   while arguments.length > 0
     if arguments[0] =~ /=/ then
@@ -120,7 +130,7 @@ end
 
 def config
   if File.exists? frakfile
-    YAML.load_file(frakfile)
+    Hash[YAML.load_file(frakfile).map { |k, v| [k.to_sym, v] }]
   else
     {}
   end
@@ -196,6 +206,72 @@ def rsync_filter
 end
 
 ##
+# List any backups found on the server
+
+def backups_list
+  system %Q:ssh #{$options[:server]} 'ls #{$options[:remote_path]}/#{$options[:backup_path]}':
+end
+
+##
+# Purge any outdated backups
+
+def backups_purge
+  begin
+    date = parse_date "#{$options[:backup_retention]} ago"
+  rescue
+    raise "Invalid retention date! #{$options[:backup_retention]}"
+  end
+  say "#{HighLine::YELLOW}Purging old backups before #{date.strftime "%c"}.#{HighLine::CLEAR}"
+
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
+end
+
+##
+# Create a patch of the latest backup
+
+def backups_patch
+  return unless $backup_path
+
+  hash = Digest::SHA2.new.update(Time.new.strftime("%Y%m%d%H%M%S")).to_s
+  patch_command = "" +
+    "find . -type f | " +
+    "grep -v #{hash}.patch | " +
+    "cut -c3- | " +
+    "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
+  say "#{HighLine::YELLOW}Generating patch file #{hash}.patch.#{HighLine::CLEAR}"
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} > #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch':
+end
+
+##
+# Parse a date from a string of the format "x <days|weeks|months|years> [ago]"
+
+def parse_date(string)
+  parts = string.split
+
+  if parts[1][0..5] == "second"
+    seconds = parts[0].to_f
+  elsif parts[1][0..5] == "minute"
+    seconds = parts[0].to_f * 60
+  elsif parts[1][0..3] == "hour"
+    seconds = parts[0].to_f * 60 * 60
+  elsif parts[1][0..2] == "day"
+    seconds = parts[0].to_f * 60 * 60 * 24
+  elsif parts[1][0..3] == "week"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 7
+  elsif parts[1][0..4] == "month"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 30
+  elsif parts[1][0..3] == "year"
+    seconds = parts[0].to_f * 60 * 60 * 24 * 365
+  end
+
+  if parts[2] == "ago"
+    return Time.now - seconds
+  else
+    return Time.now + seconds
+  end
+end
+
+##
 # Generate the entire rsync command. Uses rsync's --files-from
 # parameter to deploy multiple paths at once.
 
@@ -214,12 +290,23 @@ def rsync_command(options = nil)
     destination = "#{$options[:server]}:#{$options[:remote_path]}"
   end
 
+  # Figure out backup options
+  if !$options[:backup_path].nil? && $options[:backup_path]
+    backup = ["--exclude \"#{$options[:backup_path]}\""]
+    if not $command == "pull"
+      # keep the same backup path for all rsync_commands
+      $backup_path = "#{$options[:backup_path]}/#{Time.new.strftime("%Y%m%d%H%M%S")}" if $backup_path.nil?
+      backup.push "--backup --backup-dir \"#{$backup_path}\""
+    end
+    backup = "#{backup.join ' '} "
+  end
+
   rsync = "#{rsync}rsync " +
     "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
     "--compress --checksum --itemize-changes --recursive --delete " +
     ($options[:rsync_path].nil? ? "" : "--rsync-path=\"#{$options[:rsync_path]}\" ") +
     "#{rsync_filter} " +
-    # "--backup --backup-dir '' " +
+    backup +
     "#{options} " +
     (rsync_files.join.length > 0 ? "--files-from=- --relative " : "") +
     "'#{source}' #{destination}"
@@ -232,6 +319,12 @@ def execute
   case $command
     when "init"
       system "touch .frak .frakignore && $EDITOR .frak"
+
+    when "backups:list"
+      backups_list
+
+    when "backups:purge"
+      backups_purge
 
     when "console"
       system "ssh #{$options[:server]} #{$options[:command]}"
@@ -257,6 +350,8 @@ def execute
           # run in the directory that .frak file is found
           Dir.chdir File.dirname frakfile do
             system command
+            backups_patch
+            backups_purge
             if $options[:after]
               say "#{HighLine::YELLOW}Executing commands on remote server.#{HighLine::CLEAR}"
               system "ssh #{$options[:server]} '#{$options[:after]}'"
@@ -298,11 +393,34 @@ def execute
       usage
 
     when "--version"
-      version
+      say version
 
     else
       usage
 
+  end
+end
+
+def auto_update
+  require 'open-uri'
+  open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
+    r.each_line do |line|
+      if line[0..9] == "# @version"
+        new_version = line[11..-2].to_s
+        if new_version != version
+          upgrade = agree("#{HighLine::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade?#{HighLine::CLEAR}")
+          if upgrade
+            File.open(__FILE__, 'w') do |file|
+              r.pos = 0
+              file.write(r.read)
+            end
+            say "Upgraded to version #{new_version}."
+            system Shellwords.join([$0] + ARGV) unless $command == "--version"
+            exit
+          end
+        end
+      end
+    end
   end
 end
 
