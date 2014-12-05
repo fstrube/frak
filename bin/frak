@@ -406,24 +406,29 @@ end
 
 def auto_update
   require 'open-uri'
-  open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
-    r.each_line do |line|
-      if line[0..9] == "# @version"
-        new_version = line[11..-2].to_s
-        if new_version != version
-          upgrade = agree("#{HighLine::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade?#{HighLine::CLEAR}")
-          if upgrade
-            File.open(__FILE__, 'w') do |file|
-              r.pos = 0
-              file.write(r.read)
+
+  begin
+    open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
+      r.each_line do |line|
+        if line[0..9] == "# @version"
+          new_version = line[11..-2].to_s
+          if new_version != version
+            upgrade = agree("#{HighLine::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade? (y/n) #{HighLine::CLEAR}")
+            if upgrade
+              File.open(__FILE__, 'w') do |file|
+                r.pos = 0
+                file.write(r.read)
+              end
+              say "Upgraded to version #{new_version}."
+              system Shellwords.join([$0] + ARGV) unless $command == "--version"
+              exit
             end
-            say "Upgraded to version #{new_version}."
-            system Shellwords.join([$0] + ARGV) unless $command == "--version"
-            exit
           end
         end
       end
     end
+  rescue
+    say "#{HighLine::YELLOW}WARNING: Unable to check for new version of frak. Please check your internet connection.#{HighLine::CLEAR}"
   end
 end
 
