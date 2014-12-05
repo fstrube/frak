@@ -69,7 +69,7 @@ def main
 
       # Load special production config, but commandline options take precedence.
       if $options[:env]
-        $options.merge!(config[$options[:env]]) { |k,a,b| a }
+        $options.merge!(config[$options[:env].to_sym]) { |k,a,b| a }
       end
     end
 
