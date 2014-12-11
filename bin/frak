@@ -18,6 +18,7 @@
 #:   --version     Display the current version of frak, also checks for upgrades
 #:
 #: Options
+#:   label         a short name for the project, used by webhooks 
 #:   env           load the specified environment into the config
 #:   method        currently only supports rsync
 #:   command       execute a command on the remote server

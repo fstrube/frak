@@ -19,6 +19,7 @@ Also, you will need rsync installed on your machine. This should already be inst
 
 All configuration options are stored in a dotfile in the root of your project. This dotfile contains the details necessary to deploy your application. You can run the command `frak init` in the root of your project to get the configuration process started. Below is a sample configuration file.
 
+    label: Example Frak Project
     server: dev.example.com
     remote_path: /var/www/com.example
     after: cd /var/www/com.example; rm cache/*
@@ -77,6 +78,7 @@ By default, simply running `frak` will attempt to deploy your application. A dry
        --version     Display the current version of frak, also checks for upgrades
 
      Options
+       label         a short name for the project, used by webhooks
        env           load the specified environment into the config
        method        currently only supports rsync
        command       execute a command on the remote server
