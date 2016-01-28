@@ -453,8 +453,8 @@ def post_webhook
 
   begin
     # Post a message to the webhook containing information on the push
-    message_post = Net::HTTP.post_form(URI.parse($options[:webhook_url]),
-      {
+    url = URI.parse($options[:webhook_url])
+    params = {
         'username' => ENV['USER'],
         'label' => ($options[:label].nil? ? '' : $options[:label]),
         'environment' => ($options[:env].nil? ? 'default' : $options[:env]),
@@ -463,10 +463,22 @@ def post_webhook
         'diff_contents' => $diff_contents,
         'files_changed' => $file_changes,
       }
-    )
-    say "#{HighLine::GREEN}Posted to webhook #{$options[:webhook_url]}.#{HighLine::CLEAR}"
-  rescue
+    request = Net::HTTP::Post.new(url.request_uri)
+    request.form_data = params
+    response = Net::HTTP.start(url.hostname, url.port, :use_ssl => url.scheme == 'https' ) do |http|
+      http.request(request)
+    end
+
+    say "#{HighLine::BLUE}POST #{url} #{params}#{HighLine::CLEAR}" if $options[:debug]
+    if response.code.match(/2../)
+      say "#{HighLine::GREEN}Successfully posted to webhook #{$options[:webhook_url]}.#{HighLine::CLEAR}"
+    else
+      say "#{HighLine::YELLOW}Posting to webhook failed #{$options[:webhook_url]}.#{HighLine::CLEAR}"
+      say "#{HighLine::RED}#{response.body}.#{HighLine::CLEAR}" if $options[:debug]
+    end
+  rescue Exception => e
     say "#{HighLine::YELLOW}WARNING: Unable to post to configured webhook. Please check your internet connection.#{HighLine::CLEAR}"
+    say "#{HighLine::RED}#{e.message}\n#{HighLine::YELLOW}#{e.backtrace.join("\n")}#{HighLine::CLEAR}" if $options[:debug]
   end
 end
 
