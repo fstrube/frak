@@ -18,7 +18,7 @@
 #:   --version     Display the current version of frak, also checks for upgrades
 #:
 #: Options
-#:   label         a short name for the project, used by webhooks 
+#:   label         a short name for the project, used by webhooks
 #:   env           load the specified environment into the config
 #:   method        currently only supports rsync
 #:   command       execute a command on the remote server
@@ -46,7 +46,7 @@ require 'shellwords'
 begin
   require 'highline/import'
 rescue LoadError
-  puts "\033[31mFrak! You're missing the Highline gem. Run \033[33mgem install highline\033[31m to get it.\033[0m"
+  puts "\033[31mFrak! You're missing the HighLine gem. Run \033[33mgem install highline\033[31m to get it.\033[0m"
   exit
 end
 
