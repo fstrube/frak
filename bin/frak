@@ -27,6 +27,7 @@
 #:   rsync_path    override the rsync-path read from .frak file (if present)
 #:   ignore        ignore certain files or folders when deploying
 #:   webhook_url   URL for a webhook which will receive information about the code pushed via frak
+#:   --no-color    Disable ANSI colors in diff output.
 #:
 #: Examples
 #:
@@ -151,12 +152,14 @@ end
 
 def parse_command
   arguments = ARGV.clone
-  options = {backup_path: ".backups", backup_retention: "30 days"}
+  options = {backup_path: ".backups", backup_retention: "30 days", colorize: true, paginate: true}
   command = "push"
   while arguments.length > 0
     if arguments[0] =~ /=/ then
       key, value = arguments[0].split '='
       options[key.to_sym] = value
+    elsif arguments[0] == "--no-color" then
+      options[:colorize] = false
     else
       command = arguments[0]
     end
@@ -423,14 +426,34 @@ def execute
 
       if proceed
         Dir.chdir File.dirname frakfile do
+          # build a single diff command for all changes
+          diffs = []
           changes.each_line do |line|
             action, file = line.chomp.split(' ', 2)
 
             # apply labels to our diff so we know what we're looking at
             remote_label = "#{$options[:server]}/#{file}"
             local_label  = "local/#{file}"
-            system %Q:bash -c '#{diff_command} --label #{remote_label} --label #{local_label} <(ssh #{$options[:server]} "cat #{$options[:remote_path]}/#{file} 2>/dev/null") "#{file}"':
+            diffs.push %Q[#{diff_command} --label #{remote_label} --label #{local_label} <(ssh #{$options[:server]} "cat #{$options[:remote_path]}/#{file} 2>/dev/null") "#{file}"]
           end
+
+          # colorize the output so it is pretty
+          colorize = [
+            # additions
+            %Q[ | sed -l -e 's/^\\(+[^+].*\\)/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
+            %Q[ | sed -l -e 's/^\\(+\\)$/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
+            # deletions
+            %Q[ | sed -l -e 's/^\\(-[^-].*\\)/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
+            %Q[ | sed -l -e 's/^\\(-\\)$/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
+            # markers
+            %Q[ | sed -l -e 's/^\\(@@ -[0-9][0-9]*,[0-9][0-9]* +[0-9][0-9]*,[0-9][0-9]* .*@@\\)/#{ANSI::BLUE}\\1#{ANSI::CLEAR}/']
+          ].join('')
+
+          # paginate the output if it is long
+          pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
+
+          debug %Q(bash -c '#{diffs.join(";")}' #{colorize} #{pager})
+          system %Q(bash -c '#{diffs.join(";")}' #{colorize} #{pager})
         end
       end
 
