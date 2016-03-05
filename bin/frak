@@ -43,11 +43,21 @@ require 'yaml'
 require 'digest'
 require 'time'
 require 'shellwords'
-begin
-  require 'highline/import'
-rescue LoadError
-  puts "\033[31mFrak! You're missing the HighLine gem. Run \033[33mgem install highline\033[31m to get it.\033[0m"
-  exit
+
+# Colors
+module ANSI
+  CLEAR = "\033[0m"
+  BOLD = "\033[1m"
+  UNDERLINE = "\033[4m"
+
+  BLACK = "\033[30m"
+  RED = "\033[31m"
+  GREEN = "\033[32m"
+  YELLOW = "\033[33m"
+  BLUE = "\033[34m"
+  MAGENTA = "\033[35m"
+  CYAN = "\033[36m"
+  WHITE = "\033[37m"
 end
 
 ##
@@ -88,9 +98,23 @@ def main
 
     execute
   rescue Exception => e
-    say "#{HighLine::RED}#{e.message}#{HighLine::CLEAR}"
+    say "#{ANSI::RED}#{e.message}#{ANSI::CLEAR}"
     puts e.backtrace if $options[:debug]
   end
+end
+
+def agree(prompt)
+  printf("#{prompt.chomp} ")
+  answer = $stdin.gets.chomp
+
+  return %w(y yes).include?(answer)
+end
+
+##
+# Alias for puts
+
+def say(something)
+  puts something
 end
 
 ##
@@ -231,7 +255,7 @@ def backups_purge
   rescue
     raise "Invalid retention date! #{$options[:backup_retention]}"
   end
-  say "#{HighLine::YELLOW}Purging old backups before #{date.strftime "%c"}.#{HighLine::CLEAR}"
+  say "#{ANSI::YELLOW}Purging old backups before #{date.strftime "%c"}.#{ANSI::CLEAR}"
 
   system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
 end
@@ -248,7 +272,7 @@ def backups_patch
     "grep -v #{hash}.patch | " +
     "cut -c3- | " +
     "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
-  say "#{HighLine::YELLOW}Generating patch file #{hash}.patch.#{HighLine::CLEAR}"
+  say "#{ANSI::YELLOW}Generating patch file #{hash}.patch.#{ANSI::CLEAR}"
   system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} >> #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch':
   $diff_contents = `ssh #{$options[:server]} 'cat #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch'`
   $diff_name = ($options[:label].nil? ? hash : $options[:label]) + "/#{$backup_path}/#{hash}.patch"
@@ -346,7 +370,7 @@ def execute
       command = rsync_command "--dry-run"
 
       if $options[:debug]
-        say "#{HighLine::BLUE}#{command}#{HighLine::CLEAR}"
+        say "#{ANSI::BLUE}#{command}#{ANSI::CLEAR}"
       end
 
       # run it from the root directory where .frak file is found
@@ -357,7 +381,7 @@ def execute
 
       begin
         # prompt for continuance
-        proceed = agree("#{HighLine::YELLOW}The above actions will be taken. Continue? (This cannot be undone): #{HighLine::CLEAR}")
+        proceed = agree("#{ANSI::YELLOW}The above actions will be taken. Continue? (This cannot be undone): #{ANSI::CLEAR}")
         if proceed
           command = rsync_command
           # run in the directory that .frak file is found
@@ -366,20 +390,20 @@ def execute
             backups_patch
             backups_purge
             if $options[:after]
-              say "#{HighLine::YELLOW}Executing commands on remote server.#{HighLine::CLEAR}"
+              say "#{ANSI::YELLOW}Executing commands on remote server.#{ANSI::CLEAR}"
               system "ssh #{$options[:server]} '#{$options[:after]}'"
             end
           end
-          say "#{HighLine::GREEN}Deployment complete.#{HighLine::CLEAR}"
+          say "#{ANSI::GREEN}Deployment complete.#{ANSI::CLEAR}"
           if $options[:webhook_url] && $command == 'push'
             post_webhook
           end
         else
-          say "#{HighLine::RED}Deployment cancelled by user.#{HighLine::CLEAR}"
+          say "#{ANSI::RED}Deployment cancelled by user.#{ANSI::CLEAR}"
         end
       # rescue handles ctrl+c
       rescue Interrupt
-        say "\n#{HighLine::RED}Deployment cancelled by user.#{HighLine::CLEAR}"
+        say "\n#{ANSI::RED}Deployment cancelled by user.#{ANSI::CLEAR}"
       end
 
     when "diff"
@@ -390,7 +414,7 @@ def execute
       end
       num_changes = changes.lines.count
 
-      proceed = num_changes > 10 ? agree("#{HighLine::YELLOW}#{changes.lines.count} file(s) will be compared. Continue?#{HighLine::CLEAR}") : true
+      proceed = num_changes > 10 ? agree("#{ANSI::YELLOW}#{changes.lines.count} file(s) will be compared. Continue?#{ANSI::CLEAR}") : true
 
       if proceed
         Dir.chdir File.dirname frakfile do
@@ -426,7 +450,7 @@ def auto_update
         if line[0..9] == "# @version"
           new_version = line[11..-2].to_s
           if new_version != version
-            upgrade = agree("#{HighLine::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade? (y/n) #{HighLine::CLEAR}")
+            upgrade = agree("#{ANSI::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade? (y/n) #{ANSI::CLEAR}")
             if upgrade
               File.open(__FILE__, 'w') do |file|
                 r.pos = 0
@@ -441,7 +465,7 @@ def auto_update
       end
     end
   rescue
-    say "#{HighLine::YELLOW}WARNING: Unable to check for new version of frak. Please check your internet connection.#{HighLine::CLEAR}"
+    say "#{ANSI::YELLOW}WARNING: Unable to check for new version of frak. Please check your internet connection.#{ANSI::CLEAR}"
   end
 end
 
@@ -469,16 +493,16 @@ def post_webhook
       http.request(request)
     end
 
-    say "#{HighLine::BLUE}POST #{url} #{params}#{HighLine::CLEAR}" if $options[:debug]
+    say "#{ANSI::BLUE}POST #{url} #{params}#{ANSI::CLEAR}" if $options[:debug]
     if response.code.match(/2../)
-      say "#{HighLine::GREEN}Successfully posted to webhook #{$options[:webhook_url]}.#{HighLine::CLEAR}"
+      say "#{ANSI::GREEN}Successfully posted to webhook #{$options[:webhook_url]}.#{ANSI::CLEAR}"
     else
-      say "#{HighLine::YELLOW}Posting to webhook failed #{$options[:webhook_url]}.#{HighLine::CLEAR}"
-      say "#{HighLine::RED}#{response.body}.#{HighLine::CLEAR}" if $options[:debug]
+      say "#{ANSI::YELLOW}Posting to webhook failed #{$options[:webhook_url]}.#{ANSI::CLEAR}"
+      say "#{ANSI::RED}#{response.body}.#{ANSI::CLEAR}" if $options[:debug]
     end
   rescue Exception => e
-    say "#{HighLine::YELLOW}WARNING: Unable to post to configured webhook. Please check your internet connection.#{HighLine::CLEAR}"
-    say "#{HighLine::RED}#{e.message}\n#{HighLine::YELLOW}#{e.backtrace.join("\n")}#{HighLine::CLEAR}" if $options[:debug]
+    say "#{ANSI::YELLOW}WARNING: Unable to post to configured webhook. Please check your internet connection.#{ANSI::CLEAR}"
+    say "#{ANSI::RED}#{e.message}\n#{ANSI::YELLOW}#{e.backtrace.join("\n")}#{ANSI::CLEAR}" if $options[:debug]
   end
 end
 
