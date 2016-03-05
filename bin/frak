@@ -99,7 +99,7 @@ def main
     execute
   rescue Exception => e
     say "#{ANSI::RED}#{e.message}#{ANSI::CLEAR}"
-    puts e.backtrace if $options[:debug]
+    debug e.backtrace, ANSI::CLEAR
   end
 end
 
@@ -115,6 +115,13 @@ end
 
 def say(something)
   puts something
+end
+
+##
+# Debug output
+
+def debug(something, color=ANSI::BLUE)
+  say "#{color}#{something}#{ANSI::CLEAR}" if $options[:debug]
 end
 
 ##
@@ -369,9 +376,7 @@ def execute
       # generate a dry-run command
       command = rsync_command "--dry-run"
 
-      if $options[:debug]
-        say "#{ANSI::BLUE}#{command}#{ANSI::CLEAR}"
-      end
+      debug command
 
       # run it from the root directory where .frak file is found
       Dir.chdir File.dirname frakfile do
@@ -493,16 +498,17 @@ def post_webhook
       http.request(request)
     end
 
-    say "#{ANSI::BLUE}POST #{url} #{params}#{ANSI::CLEAR}" if $options[:debug]
+    debug "POST #{url} #{params}"
     if response.code.match(/2../)
       say "#{ANSI::GREEN}Successfully posted to webhook #{$options[:webhook_url]}.#{ANSI::CLEAR}"
     else
       say "#{ANSI::YELLOW}Posting to webhook failed #{$options[:webhook_url]}.#{ANSI::CLEAR}"
-      say "#{ANSI::RED}#{response.body}.#{ANSI::CLEAR}" if $options[:debug]
+      debug response.body, ANSI::RED
     end
   rescue Exception => e
     say "#{ANSI::YELLOW}WARNING: Unable to post to configured webhook. Please check your internet connection.#{ANSI::CLEAR}"
-    say "#{ANSI::RED}#{e.message}\n#{ANSI::YELLOW}#{e.backtrace.join("\n")}#{ANSI::CLEAR}" if $options[:debug]
+    debug e.message, ANSI::RED
+    debug e.backtrace.join("\n"), ANSI::YELLOW
   end
 end
 
