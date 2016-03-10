@@ -427,14 +427,12 @@ def execute
       if proceed
         Dir.chdir File.dirname frakfile do
           # build a single diff command for all changes
-          diffs = []
-          changes.each_line do |line|
-            action, file = line.chomp.split(' ', 2)
+          files = changes.split("\n").collect {|change| change.chomp.split(' ', 2)[1]}
 
-            # apply labels to our diff so we know what we're looking at
-            remote_label = "#{$options[:server]}/#{file}"
-            local_label  = "local/#{file}"
-            diffs.push %Q[#{diff_command} --label #{remote_label} --label #{local_label} <(ssh #{$options[:server]} "cat #{$options[:remote_path]}/#{file} 2>/dev/null") "#{file}"]
+          tar = "tar cz #{Shellwords.join files}"
+
+          diffs = files.collect do |file|
+            "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null) "
           end
 
           # colorize the output so it is pretty
@@ -452,8 +450,10 @@ def execute
           # paginate the output if it is long
           pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
 
-          debug %Q(bash -c '#{diffs.join(";")}' #{colorize} #{pager})
-          system %Q(bash -c '#{diffs.join(";")}' #{colorize} #{pager})
+          if diffs.length > 0
+            debug %Q(#{tar} | ssh #{$options[:server]} 'tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball' #{colorize} #{pager})
+            system %Q(#{tar} | ssh #{$options[:server]} 'tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball' #{colorize} #{pager})
+          end
         end
       end
 
