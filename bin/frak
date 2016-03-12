@@ -418,7 +418,12 @@ def execute
       # show differences between server and local
       changes = ""
       Dir.chdir File.dirname frakfile do
-        changes = `#{rsync_command "--dry-run"}`
+        changes = `#{rsync_command "--dry-run"}`.lines.collect do |change|
+          change.chomp.split(' ', 2)
+        end.select do |change|
+          action, file = change
+          file[-1] != '/'
+        end
       end
       num_changes = changes.lines.count
 
@@ -427,13 +432,45 @@ def execute
       if proceed
         Dir.chdir File.dirname frakfile do
           # build a single diff command for all changes
-          files = changes.split("\n").collect {|change| change.chomp.split(' ', 2)[1]}
-          files.select! {|file| file[-1] != '/'}
+          files = changes.select { |change| change[0] != '*deleting' }.collect do |change|
+            action, file = change
 
-          tar = "tar cz #{Shellwords.join files}"
+            case action
+              when 'cL+++++++'
+                file.split(' -> ')[0]
+              else
+                file
+            end
+          end
+          tar = ['tar', 'cz'].concat(files.sort)
 
-          diffs = files.collect do |file|
-            "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null) "
+          diffs = changes.sort {|a,b| a[1] <=> b[1] }.collect do |change|
+            action, file = change
+
+            git_diff_header = ["diff --git a/#{file} b/#{file}"]
+
+            diff = ""
+            case action
+              when '*deleting'
+                git_diff_header.push("deleted file mode 100644")
+                git_diff_header.push("index 0000000..0000000")
+                diff = "#{diff_command} --label=#{file} --label=/dev/null #{file} /dev/null"
+              when '<f+++++++'
+                git_diff_header.push("new file mode #{sprintf '%o', File.stat(file).mode}")
+                git_diff_header.push("index 0000000..0000000")
+                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+              when 'cL+++++++'
+                file, target = file.split(' -> ')
+                git_diff_header.push("new file mode 120000")
+                git_diff_header.push("index 0000000..0000000")
+                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(printf %s #{target})"
+              else
+                git_diff_header.push("index 0000000..0000000 #{sprintf '%o', File.stat(file).mode}")
+                diff = "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+            end
+
+
+            %Q[printf "%s\\n" #{Shellwords.shellescape git_diff_header.join("\n")}; #{diff}]
           end
 
           # colorize the output so it is pretty
@@ -454,8 +491,8 @@ def execute
           pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
 
           if diffs.length > 0
-            debug %Q(#{tar} | ssh #{$options[:server]} 'tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball' #{colorize} #{pager})
-            system %Q(#{tar} | ssh #{$options[:server]} 'tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball' #{colorize} #{pager})
+            debug %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+            system %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
           end
         end
       end
