@@ -428,6 +428,7 @@ def execute
         Dir.chdir File.dirname frakfile do
           # build a single diff command for all changes
           files = changes.split("\n").collect {|change| change.chomp.split(' ', 2)[1]}
+          files.select! {|file| file[-1] != '/'}
 
           tar = "tar cz #{Shellwords.join files}"
 
