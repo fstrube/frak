@@ -437,16 +437,18 @@ def execute
           end
 
           # colorize the output so it is pretty
-          colorize = [
+          colorize = '| sed -l ' + [
             # additions
-            %Q[ | sed -l -e 's/^\\(+[^+].*\\)/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
-            %Q[ | sed -l -e 's/^\\(+\\)$/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(+[^+].*\\)/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(+\\)$/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
             # deletions
-            %Q[ | sed -l -e 's/^\\(-[^-].*\\)/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
-            %Q[ | sed -l -e 's/^\\(-\\)$/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(-[^-].*\\)/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(-\\)$/#{ANSI::RED}\\1#{ANSI::CLEAR}/'],
             # markers
-            %Q[ | sed -l -e 's/^\\(@@ -[0-9][0-9]*,[0-9][0-9]* +[0-9][0-9]*,[0-9][0-9]* .*@@\\)/#{ANSI::BLUE}\\1#{ANSI::CLEAR}/']
-          ].join('')
+            %Q[-e 's/^\\(@@ -[0-9][0-9]*,[0-9][0-9]* +[0-9][0-9]*,[0-9][0-9]* .*@@\\)/#{ANSI::BLUE}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(@@ -[0-9][0-9]*,[0-9][0-9]* +[0-9][0-9]* .*@@\\)/#{ANSI::BLUE}\\1#{ANSI::CLEAR}/'],
+            %Q[-e 's/^\\(@@ -[0-9][0-9]* +[0-9][0-9]*,[0-9][0-9]* .*@@\\)/#{ANSI::BLUE}\\1#{ANSI::CLEAR}/']
+          ].join(' ')
 
           # paginate the output if it is long
           pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
