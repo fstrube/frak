@@ -100,7 +100,7 @@ def main
     execute
   rescue Exception => e
     say "#{ANSI::RED}#{e.message}#{ANSI::CLEAR}"
-    debug e.backtrace, ANSI::CLEAR
+    debug e.backtrace.join("\n"), ANSI::CLEAR
   end
 end
 
@@ -108,7 +108,7 @@ def agree(prompt)
   printf("#{prompt.chomp} ")
   answer = $stdin.gets.chomp
 
-  return %w(y yes).include?(answer)
+  return %w(y yes).include?(answer.downcase)
 end
 
 ##
@@ -204,7 +204,7 @@ def diff_command
   if $options[:diff]
     return $options[:diff]
   else
-    return "diff -Naur"
+    return "diff -Naurp"
   end
 end
 
@@ -425,9 +425,8 @@ def execute
           file[-1] != '/'
         end
       end
-      num_changes = changes.lines.count
 
-      proceed = num_changes > 10 ? agree("#{ANSI::YELLOW}#{changes.lines.count} file(s) will be compared. Continue?#{ANSI::CLEAR}") : true
+      proceed = changes.count < 50 || agree("#{ANSI::YELLOW}#{changes.count} file(s) will be compared. Continue?#{ANSI::CLEAR}")
 
       if proceed
         Dir.chdir File.dirname frakfile do
