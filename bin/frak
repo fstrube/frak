@@ -543,7 +543,7 @@ def auto_update
     open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
       r.each_line do |line|
         if line[0..9] == "# @version"
-          new_version = line[11..-2].to_s
+          new_version = line.chomp[11..-1]
           if new_version != version
             upgrade = agree("#{ANSI::YELLOW}Version #{new_version} is now available. You are currently running version #{version}. Would you like to upgrade? (y/n) #{ANSI::CLEAR}")
             if upgrade
