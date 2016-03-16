@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.3.0
+# @version 1.3.1
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -216,15 +216,15 @@ def rsync_files
   if $options[:path]
     paths = $options[:path].split.map { |p| File.expand_path p }
   else
-    paths = [Dir.pwd]
+    paths = [Dir.pwd + "/"]
   end
 
-  # expand any wildcards
-  paths.map! { |p| Dir.glob(p) }
+  # expand any wildcards--only if the path has a star (*) or question-mark (?)
+  paths.map! { |p| p[/[*?]/] ? Dir.glob(p) : p }
   paths.flatten!
 
   # make paths relative to .frak file
-  paths.map! { |p| p.sub File.dirname(frakfile), "" }
+  paths.map! { |p| p.sub File.dirname(frakfile) + "/", "" }
 
   return paths
 end
@@ -322,7 +322,7 @@ end
 # parameter to deploy multiple paths at once.
 
 def rsync_command(options = nil)
-  if rsync_files.join.length > 0
+  if $options[:path]
     rsync = "echo \"#{rsync_files.join("\n")}\" | "
   end
 
@@ -330,9 +330,9 @@ def rsync_command(options = nil)
   if $command == "pull"
     # trailing slashes are important for pull
     source = "#{$options[:server]}:#{$options[:remote_path]}/"
-    destination = "#{File.dirname frakfile}/"
+    destination = "./"
   else
-    source = "#{File.dirname frakfile}/"
+    source = "./"
     destination = "#{$options[:server]}:#{$options[:remote_path]}"
   end
 
@@ -352,9 +352,9 @@ def rsync_command(options = nil)
     "--compress --checksum --itemize-changes --recursive --delete " +
     ($options[:rsync_path].nil? ? "" : "--rsync-path=\"#{$options[:rsync_path]}\" ") +
     "#{rsync_filter} " +
-    backup +
+    "#{backup} " +
     "#{options} " +
-    (rsync_files.join.length > 0 ? "--files-from=- --relative " : "") +
+    ($options[:path] ? "--include-from=- --exclude=\\* --relative " : "") +
     "'#{source}' #{destination}"
 end
 
