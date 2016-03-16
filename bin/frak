@@ -364,7 +364,35 @@ end
 def execute
   case $command
     when "init"
-      system "touch .frak .frakignore && $EDITOR .frak"
+      if not File.exists? ".frak"
+        File.open(".frak", "w") do |f|
+          f.write <<-frak
+# label: Example Frak Project
+server: dev.example.com
+remote_path: /var/www/com.example
+# after: cd /var/www/com.example; rm cache/*
+method: rsync
+# rsync_path: sudo rsync
+
+# production:
+#   server: www.example.com
+#   webhook_url: http://api.example.com/frak/frak.php
+
+# vim: syntax=yaml
+          frak
+        end
+
+        File.open(".frakignore", "w") do |f|
+          f.write <<-frakignore
+# See the FILTER RULES section in `man rsync`
+# - vendor/bundle
+          frakignore
+        end
+
+        system "#{ENV["EDITOR"].length > 0 ? ENV["EDITOR"] : "vim"} .frak"
+      else
+        say "Frak configuration already exists in #{frakfile.sub Dir.pwd + "/", ""}!"
+      end
 
     when "backups:list"
       backups_list
