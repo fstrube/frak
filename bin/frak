@@ -209,44 +209,54 @@ def diff_command
 end
 
 ##
-# Determine what is the local_path to be deployed
-
-def rsync_files
-  # if path= is defined
-  if $options[:path]
-    paths = $options[:path].split.map { |p| File.expand_path p }
-  else
-    paths = [Dir.pwd + "/"]
-  end
-
-  # expand any wildcards--only if the path has a star (*) or question-mark (?)
-  paths.map! { |p| p[/[*?]/] ? Dir.glob(p) : p }
-  paths.flatten!
-
-  # make paths relative to .frak file
-  paths.map! { |p| p.sub File.dirname(frakfile) + "/", "" }
-
-  return paths
-end
-
-##
 # Generate a filter for rsync
 
 def rsync_filter
-  filter = [".frak*", ".git*", ".svn*", ".tags*", "Capfile", "Gemfile*", "Vagrantfile*"]
+  filters = []
+  includes = []
+  excludes = [".frak*", ".git*", ".svn*", ".tags*", "Capfile", "Gemfile*", "Vagrantfile*"]
 
-  # include filters via commandline
+  # merge excludes via commandline
   if $options[:ignore]
-    filter = filter + $options[:ignore].split
+    excludes = excludes + $options[:ignore].split
   end
 
-  filter.map! { |e| "--filter='- #{e}'" }
+  # merge path
+  if $options[:path]
+    paths = $options[:path].split.map { |p| File.expand_path p }
+    paths.map! { |p| p[/[*?]/] ? Dir.glob(p) : p }
+    paths.flatten!
 
+    # make paths relative to .frak file
+    paths.map! { |p| p.sub File.dirname(frakfile), "" }
+
+    # include all parent directories to fix recursive rsync from excluding all
+    paths.each do |p|
+      includes.push p
+      while File.dirname(p) != "/"
+        excludes.push "#{File.dirname p}/*"
+
+        p = File.dirname p
+        includes.push p
+      end
+    end
+    excludes.push "/*"
+  end
+
+  # merge .frakignore file
   if File.exists? "#{File.dirname frakfile}/.frakignore" then
-    filter.push "--filter='.e .frakignore'"
+    filters.push ".e .frakignore"
   end
 
-  filter.join ' '
+  includes.each do |include|
+    filters.push "+ #{include}"
+  end
+
+  excludes.each do |exclude|
+    filters.push "- #{exclude}"
+  end
+
+  return filters
 end
 
 ##
@@ -322,10 +332,6 @@ end
 # parameter to deploy multiple paths at once.
 
 def rsync_command(options = nil)
-  if $options[:path]
-    rsync = "echo \"#{rsync_files.join("\n")}\" | "
-  end
-
   # Flip the source and destination if this is a pull command
   if $command == "pull"
     # trailing slashes are important for pull
@@ -338,24 +344,29 @@ def rsync_command(options = nil)
 
   # Figure out backup options
   if !$options[:backup_path].nil? && $options[:backup_path]
-    backup = ["--exclude \"#{$options[:backup_path]}\""]
+    backup = ["--exclude=#{$options[:backup_path]}"]
     if not $command == "pull"
       # keep the same backup path for all rsync_commands
       $backup_path = "#{$options[:backup_path]}/#{Time.new.strftime("%Y%m%d%H%M%S")}" if $backup_path.nil?
-      backup.push "--backup --backup-dir \"#{$backup_path}\""
+      backup += ["--backup", "--backup-dir=#{$backup_path}"]
     end
-    backup = "#{backup.join ' '} "
+    backup
   end
 
-  rsync = "#{rsync}rsync " +
-    "--archive --no-group --no-owner --no-perms --no-times --human-readable " +
-    "--compress --checksum --itemize-changes --recursive --delete " +
-    ($options[:rsync_path].nil? ? "" : "--rsync-path=\"#{$options[:rsync_path]}\" ") +
-    "#{rsync_filter} " +
-    "#{backup} " +
-    "#{options} " +
-    ($options[:path] ? "--include-from=- --exclude=\\* --relative " : "") +
-    "'#{source}' #{destination}"
+  command = ""
+  if rsync_filter.length > 0
+    command = Shellwords.join(["echo", rsync_filter.join("\n")]) + " | "
+  end
+  command += Shellwords.join([
+      "rsync",
+      "--archive", "--no-group", "--no-owner", "--no-perms", "--no-times", "--human-readable",
+      "--compress", "--checksum", "--itemize-changes", "--recursive", "--delete",
+      "--rsync-path=#{$options[:rsync_path].nil? ? "rsync" : $options[:rsync_path]}",
+      "--filter=. -",
+      *backup,
+      *options,
+      "#{source}", "#{destination}"
+    ])
 end
 
 ##
