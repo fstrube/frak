@@ -566,9 +566,23 @@ def auto_update
               Dir.chdir frak_path do
                 is_git = `git remote -v | grep '/frak\\.git'`.chomp.length > 0
                 git_branch = `git branch | grep '^*' | cut -d ' ' -f 2`.chomp
+                git_status = `git status --porcelain`.chomp
+                is_dirty = git_status.split.length > 0
 
                 if is_git and git_branch != "master"
-                  say "#{ANSI::YELLOW}WARNING: You are on branch #{git_branch}. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "#{ANSI::RED}ERROR: Update failed. You are on branch `#{git_branch}`. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "Example:"
+                  say "  cd #{frak_path}"
+                  say "  git stash # revert your unstaged changes"
+                  say "  git checkout master"
+                  say "  git pull origin master"
+                elsif is_git and is_dirty
+                  say "#{ANSI::RED}ERROR: Update failed. Your working copy has changes. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "Example:"
+                  say "  cd #{frak_path}"
+                  say "  git stash # revert your unstaged changes"
+                  say "  git pull origin master"
+                  say "  git stash pop # optional. recover your change prior to pull"
                 elsif is_git and git_branch == "master"
                   Dir.chdir frak_path do
                     if system("git fetch --all && git pull origin master")
