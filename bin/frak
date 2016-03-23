@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.3.4
+# @version 1.3.5
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -512,7 +512,7 @@ method: rsync
           end
 
           # colorize the output so it is pretty
-          colorize = '| sed -l ' + [
+          colorize = '| sed ' + [
             # additions
             %Q[-e 's/^\\(+[^+].*\\)/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
             %Q[-e 's/^\\(+\\)$/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
@@ -526,7 +526,7 @@ method: rsync
           ].join(' ')
 
           # paginate the output if it is long
-          pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
+          pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less -r"}] : ""
 
           if diffs.length > 0
             debug %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
@@ -566,9 +566,23 @@ def auto_update
               Dir.chdir frak_path do
                 is_git = `git remote -v | grep '/frak\\.git'`.chomp.length > 0
                 git_branch = `git branch | grep '^*' | cut -d ' ' -f 2`.chomp
+                git_status = `git status --porcelain`.chomp
+                is_dirty = git_status.split.length > 0
 
                 if is_git and git_branch != "master"
-                  say "#{ANSI::YELLOW}WARNING: You are on branch #{git_branch}. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "#{ANSI::RED}ERROR: Update failed. You are on branch `#{git_branch}`. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "Example:"
+                  say "  cd #{frak_path}"
+                  say "  git stash # revert your unstaged changes"
+                  say "  git checkout master"
+                  say "  git pull origin master"
+                elsif is_git and is_dirty
+                  say "#{ANSI::RED}ERROR: Update failed. Your working copy has changes. Please manually check for upstream changes.#{ANSI::CLEAR}"
+                  say "Example:"
+                  say "  cd #{frak_path}"
+                  say "  git stash # revert your unstaged changes"
+                  say "  git pull origin master"
+                  say "  git stash pop # optional. recover your change prior to pull"
                 elsif is_git and git_branch == "master"
                   Dir.chdir frak_path do
                     if system("git fetch --all && git pull origin master")
