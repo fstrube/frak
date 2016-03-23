@@ -512,7 +512,7 @@ method: rsync
           end
 
           # colorize the output so it is pretty
-          colorize = '| sed -l ' + [
+          colorize = '| sed ' + [
             # additions
             %Q[-e 's/^\\(+[^+].*\\)/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
             %Q[-e 's/^\\(+\\)$/#{ANSI::GREEN}\\1#{ANSI::CLEAR}/'],
