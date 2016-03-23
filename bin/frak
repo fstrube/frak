@@ -526,7 +526,7 @@ method: rsync
           ].join(' ')
 
           # paginate the output if it is long
-          pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less"}] : ""
+          pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less -r"}] : ""
 
           if diffs.length > 0
             debug %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
