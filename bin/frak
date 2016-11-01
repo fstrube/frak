@@ -608,7 +608,7 @@ def auto_update
         end
       end
     end
-  rescue OpenURI::HTTPError
+  rescue OpenURI::HTTPError, SocketError
     say "#{ANSI::YELLOW}WARNING: Unable to check for new version of frak. Please check your internet connection.#{ANSI::CLEAR}"
   rescue Exception => e
     raise e
