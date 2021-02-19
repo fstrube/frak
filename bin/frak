@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# @version 1.3.5
+# @version 1.3.6
 # @author Franklin P. Strube <franklin.strube@gmail.com>
 # @copyright 2014 Franklin P. Strube
 #
@@ -457,7 +457,7 @@ method: rsync
       # show differences between server and local
       changes = ""
       Dir.chdir File.dirname frakfile do
-        changes = `#{rsync_command "--dry-run"}`.lines.collect do |change|
+        changes = `#{rsync_command "--dry-run"} | grep -v '(new) backup_dir is'`.lines.collect do |change|
           change.chomp.split(' ', 2)
         end.select do |change|
           action, file = change
