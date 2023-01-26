@@ -345,11 +345,11 @@ def rsync_command(options = nil)
   # Flip the source and destination if this is a pull command
   if $command == "pull"
     # trailing slashes are important for pull
-    source = "#{$options[:server]}:#{$options[:remote_path]}/"
+    source = $options[:server] ? "#{$options[:server]}:#{$options[:remote_path]}/" : "#{$options[:remote_path]}/"
     destination = "./"
   else
     source = "./"
-    destination = "#{$options[:server]}:#{$options[:remote_path]}"
+    destination = $options[:server] ? "#{$options[:server]}:#{$options[:remote_path]}/" : "#{$options[:remote_path]}/"
   end
 
   # Figure out backup options
@@ -514,7 +514,7 @@ method: rsync
               when '<f+++++++'
                 git_diff_header.push("new file mode #{sprintf '%o', File.stat(file).mode}")
                 git_diff_header.push("index 0000000..0000000")
-                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(tar xzOf $tarball #{'--warning=no-unknown-keyword' if $options[:server]} #{file} || cat /dev/null)"
               when 'cL+++++++'
                 file, target = file.split(' -> ')
                 git_diff_header.push("new file mode 120000")
@@ -522,7 +522,7 @@ method: rsync
                 diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(printf %s #{target})"
               else
                 git_diff_header.push("index 0000000..0000000 #{sprintf '%o', File.stat(file).mode}")
-                diff = "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+                diff = "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball #{'--warning=no-unknown-keyword' if $options[:server]} #{file} || cat /dev/null)"
             end
 
 
@@ -546,9 +546,15 @@ method: rsync
           # paginate the output if it is long
           pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less -r"}] : ""
 
+          if $options[:server]
+            command = %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+          else
+            command = %Q(#{Shellwords.join tar} | #{Shellwords.join ['bash', '-c', "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+          end
+
           if diffs.length > 0
-            debug %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
-            system %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+            debug command
+            system command
           end
         end
       end
