@@ -575,7 +575,7 @@ def auto_update
   require 'open-uri'
 
   begin
-    open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
+    URI.open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
       r.each_line do |line|
         if line[0..9] == "# @version"
           new_version = line.chomp[11..-1]
