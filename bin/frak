@@ -456,7 +456,9 @@ method: rsync
             backups_purge
             if $options[:after]
               say "#{ANSI::YELLOW}Executing commands on remote server.#{ANSI::CLEAR}"
-              system "ssh #{$options[:server]} '#{$options[:after]}'"
+              after_command = "ssh #{$options[:server]} #{sudo_command} sh -c '#{Shellwords.escape($options[:after])}'"
+              debug after_command
+              system after_command
             end
           end
           say "#{ANSI::GREEN}Deployment complete.#{ANSI::CLEAR}"
