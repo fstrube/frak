@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 #
-# @version 1.3.6
+# @version 1.4.0
 # @author Franklin P. Strube <franklin.strube@gmail.com>
-# @copyright 2014 Franklin P. Strube
+# @copyright 2023 Franklin P. Strube
 #
 #: Usage: frak <command> [option=value option=value ...]
 #:
@@ -21,6 +21,7 @@
 #:   label         a short name for the project, used by webhooks
 #:   env           load the specified environment into the config
 #:   method        currently only supports rsync
+#:   become        whether or not to sudo
 #:   command       execute a command on the remote server
 #:   path          defaults to current directory
 #:   remote_path   override what is read from .frak file
@@ -277,7 +278,7 @@ def backups_purge
   end
   say "#{ANSI::YELLOW}Purging old backups before #{date.strftime "%c"}.#{ANSI::CLEAR}"
 
-  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && #{sudo_command} rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
 end
 
 ##
@@ -291,9 +292,18 @@ def backups_patch
     "find . -type f | " +
     "grep -v #{hash}.patch | " +
     "cut -c3- | " +
-    "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
+    "xargs -I {} sh -c \"" +
+      # Check if actual file exists, or use /dev/null
+      "if [ -f #{$options[:remote_path]}/{} ]; then " +
+        "diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{} " +
+        "; else " +
+        "diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} /dev/null " +
+      "; fi" +
+    "\""
   say "#{ANSI::YELLOW}Generating patch file #{hash}.patch.#{ANSI::CLEAR}"
-  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} >> #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch':
+  command = %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} | #{sudo_command} tee -a #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch > /dev/null':
+  debug command
+  system command
   $diff_contents = `ssh #{$options[:server]} 'cat #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch'`
   $diff_name = ($options[:label].nil? ? hash : $options[:label]) + "/#{$backup_path}/#{hash}.patch"
 end
@@ -335,11 +345,11 @@ def rsync_command(options = nil)
   # Flip the source and destination if this is a pull command
   if $command == "pull"
     # trailing slashes are important for pull
-    source = "#{$options[:server]}:#{$options[:remote_path]}/"
+    source = $options[:server] ? "#{$options[:server]}:#{$options[:remote_path]}/" : "#{$options[:remote_path]}/"
     destination = "./"
   else
     source = "./"
-    destination = "#{$options[:server]}:#{$options[:remote_path]}"
+    destination = $options[:server] ? "#{$options[:server]}:#{$options[:remote_path]}/" : "#{$options[:remote_path]}/"
   end
 
   # Figure out backup options
@@ -361,12 +371,20 @@ def rsync_command(options = nil)
       "rsync",
       "--archive", "--no-group", "--no-owner", "--no-perms", "--no-times", "--human-readable",
       "--compress", "--checksum", "--itemize-changes", "--recursive", "--delete",
-      "--rsync-path=#{$options[:rsync_path].nil? ? "rsync" : $options[:rsync_path]}",
+      "--rsync-path=#{rsync_path}",
       "--filter=. -",
       *backup,
       *options,
       "#{source}", "#{destination}"
     ])
+end
+
+def rsync_path
+  rsync_path = $options[:rsync_path].nil? ? "#{sudo_command} rsync".strip : $options[:rsync_path]
+end
+
+def sudo_command
+  sudo_command = $options[:become].nil? ?  "" : $options[:become] == false ? "" : "sudo #{$options[:become] == true ? "" : "-u " + $options[:become]}"
 end
 
 ##
@@ -438,7 +456,9 @@ method: rsync
             backups_purge
             if $options[:after]
               say "#{ANSI::YELLOW}Executing commands on remote server.#{ANSI::CLEAR}"
-              system "ssh #{$options[:server]} '#{$options[:after]}'"
+              after_command = "ssh #{$options[:server]} #{sudo_command} sh -c '#{Shellwords.escape($options[:after])}'"
+              debug after_command
+              system after_command
             end
           end
           say "#{ANSI::GREEN}Deployment complete.#{ANSI::CLEAR}"
@@ -496,7 +516,7 @@ method: rsync
               when '<f+++++++'
                 git_diff_header.push("new file mode #{sprintf '%o', File.stat(file).mode}")
                 git_diff_header.push("index 0000000..0000000")
-                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+                diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(tar xzOf $tarball #{'--warning=no-unknown-keyword' if $options[:server]} #{file} || cat /dev/null)"
               when 'cL+++++++'
                 file, target = file.split(' -> ')
                 git_diff_header.push("new file mode 120000")
@@ -504,7 +524,7 @@ method: rsync
                 diff = "#{diff_command} --label=/dev/null --label=#{file} /dev/null <(printf %s #{target})"
               else
                 git_diff_header.push("index 0000000..0000000 #{sprintf '%o', File.stat(file).mode}")
-                diff = "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball --warning=no-unknown-keyword #{file} || cat /dev/null)"
+                diff = "#{diff_command} --label=#{file} --label=#{file} #{file} <(tar xzOf $tarball #{'--warning=no-unknown-keyword' if $options[:server]} #{file} || cat /dev/null)"
             end
 
 
@@ -528,9 +548,15 @@ method: rsync
           # paginate the output if it is long
           pager = $options[:paginate] ? %Q[| #{ENV['PAGER'] || "less -r"}] : ""
 
+          if $options[:server]
+            command = %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+          else
+            command = %Q(#{Shellwords.join tar} | #{Shellwords.join ['bash', '-c', "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+          end
+
           if diffs.length > 0
-            debug %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
-            system %Q(#{Shellwords.join tar} | #{Shellwords.join ['ssh', $options[:server], "tarball=$(mktemp /tmp/frak-diff-tarball.XXXXXXXX); cat > $tarball; cd #{$options[:remote_path]}; #{diffs.join ";"}; rm $tarball"]} #{colorize if $options[:colorize]} #{pager if $options[:paginate]})
+            debug command
+            system command
           end
         end
       end
@@ -551,7 +577,7 @@ def auto_update
   require 'open-uri'
 
   begin
-    open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
+    URI.open("https://raw.github.com/fstrube/frak/master/bin/frak") do |r|
       r.each_line do |line|
         if line[0..9] == "# @version"
           new_version = line.chomp[11..-1]
