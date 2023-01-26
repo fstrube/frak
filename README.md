@@ -24,7 +24,7 @@ All configuration options are stored in a dotfile in the root of your project. T
     remote_path: /var/www/com.example
     after: cd /var/www/com.example; rm cache/*
     method: rsync
-    rsync_path: sudo rsync
+    become: true
 
     stage:
       server: dev.example.com
