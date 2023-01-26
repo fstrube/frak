@@ -21,6 +21,7 @@
 #:   label         a short name for the project, used by webhooks
 #:   env           load the specified environment into the config
 #:   method        currently only supports rsync
+#:   become        whether or not to sudo
 #:   command       execute a command on the remote server
 #:   path          defaults to current directory
 #:   remote_path   override what is read from .frak file
@@ -277,7 +278,7 @@ def backups_purge
   end
   say "#{ANSI::YELLOW}Purging old backups before #{date.strftime "%c"}.#{ANSI::CLEAR}"
 
-  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
+  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}; for x in `ls #{$options[:backup_path]}`; do [ $x -lt "#{date.strftime '%Y%m%d%H%M%S'}" ] && #{sudo_command} rm -rf #{$options[:backup_path]}/$x && echo Backup $x removed; done':
 end
 
 ##
@@ -291,9 +292,18 @@ def backups_patch
     "find . -type f | " +
     "grep -v #{hash}.patch | " +
     "cut -c3- | " +
-    "xargs -I {} diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{}"
+    "xargs -I {} sh -c \"" +
+      # Check if actual file exists, or use /dev/null
+      "if [ -f #{$options[:remote_path]}/{} ]; then " +
+        "diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} #{$options[:remote_path]}/{} " +
+        "; else " +
+        "diff -u -x #{hash}.patch --label a/{} --label b/{} ./{} /dev/null " +
+      "; fi" +
+    "\""
   say "#{ANSI::YELLOW}Generating patch file #{hash}.patch.#{ANSI::CLEAR}"
-  system %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} >> #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch':
+  command = %Q:ssh #{$options[:server]} 'cd #{$options[:remote_path]}/#{$backup_path} 2>/dev/null || exit; #{patch_command} | #{sudo_command} tee -a #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch > /dev/null':
+  debug command
+  system command
   $diff_contents = `ssh #{$options[:server]} 'cat #{$options[:remote_path]}/#{$backup_path}/#{hash}.patch'`
   $diff_name = ($options[:label].nil? ? hash : $options[:label]) + "/#{$backup_path}/#{hash}.patch"
 end
@@ -361,12 +371,20 @@ def rsync_command(options = nil)
       "rsync",
       "--archive", "--no-group", "--no-owner", "--no-perms", "--no-times", "--human-readable",
       "--compress", "--checksum", "--itemize-changes", "--recursive", "--delete",
-      "--rsync-path=#{$options[:rsync_path].nil? ? "rsync" : $options[:rsync_path]}",
+      "--rsync-path=#{rsync_path}",
       "--filter=. -",
       *backup,
       *options,
       "#{source}", "#{destination}"
     ])
+end
+
+def rsync_path
+  rsync_path = $options[:rsync_path].nil? ? "#{sudo_command} rsync".strip : $options[:rsync_path]
+end
+
+def sudo_command
+  sudo_command = $options[:become].nil? ?  "" : $options[:become] == false ? "" : "sudo #{$options[:become] == true ? "" : "-u " + $options[:become]}"
 end
 
 ##
