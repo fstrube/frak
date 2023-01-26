@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 #
-# @version 1.3.6
+# @version 1.4.0
 # @author Franklin P. Strube <franklin.strube@gmail.com>
-# @copyright 2014 Franklin P. Strube
+# @copyright 2023 Franklin P. Strube
 #
 #: Usage: frak <command> [option=value option=value ...]
 #:
